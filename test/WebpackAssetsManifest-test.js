@@ -6,20 +6,47 @@ const chai = require('chai');
 const spies = require('chai-spies');
 const rimraf = require('rimraf');
 const webpack = require('webpack');
+const { mkdirp: webpack_mkdirp } = require('webpack/lib/util/fs');
 const superagent = require('superagent');
 const configs = require('./fixtures/configs');
 const makeCompiler = require('./fixtures/makeCompiler');
 const WebpackDevServer = require('webpack-dev-server');
+
 const WebpackAssetsManifest = require('../src/WebpackAssetsManifest');
 const { assert, expect } = chai;
 
 chai.use(spies);
 
-const _444 = parseInt('0444', 8);
-const _777 = parseInt('0777', 8);
+const _444 = 0o444;
+const _777 = 0o777;
 
 console.log( chalk`Webpack version: {blueBright.bold %s}`, require('webpack/package.json').version );
 console.log( chalk`Webpack dev server version: {blueBright.bold %s}`, require('webpack-dev-server/package.json').version );
+
+function create( config, pluginOptions, comp = makeCompiler )
+{
+  let manifest;
+
+  if ( Array.isArray( pluginOptions ) ) {
+    const [ options, callback ] = pluginOptions;
+
+    manifest = new WebpackAssetsManifest( options );
+
+    callback( manifest );
+  } else {
+    manifest = new WebpackAssetsManifest( pluginOptions );
+  }
+
+  config.plugins.push( manifest );
+
+  const compiler = comp( config );
+
+  const run = () => new Promise( (resolve, reject) => {
+    compiler.run( err => err ? reject( err ) : resolve() );
+  });
+
+  return { compiler, manifest, run };
+}
 
 describe('WebpackAssetsManifest', function() {
   beforeEach(() => {
@@ -30,13 +57,11 @@ describe('WebpackAssetsManifest', function() {
     chai.spy.restore();
   });
 
-  before('set up', function(done) {
-    mkdirp(configs.getWorkspace(), _777)
-      .then(() => done())
-      .catch(err => { throw err; });
+  before('set up', async () => {
+    await mkdirp(configs.getWorkspace(), _777);
   });
 
-  after('clean up', function(done) {
+  after('clean up', done => {
     rimraf(configs.getWorkspace(), function(err) {
       if (err) {
         throw err;
@@ -97,22 +122,23 @@ describe('WebpackAssetsManifest', function() {
 
     describe('getOutputPath()', function() {
       it('should work with an absolute output path', function() {
-        const manifest = new WebpackAssetsManifest({
-          output: '/manifest.json',
-        });
-
-        manifest.apply(makeCompiler(configs.hello()));
+        const { manifest } = create(
+          configs.hello(),
+          {
+            output: '/manifest.json',
+          }
+        );
 
         assert.equal('/manifest.json', manifest.getOutputPath());
       });
 
       it('should work with a relative output path', function() {
-        const compiler = makeCompiler(configs.hello());
-        const manifest = new WebpackAssetsManifest({
-          output: '../manifest.json',
-        });
-
-        manifest.apply(compiler);
+        const { compiler, manifest } = create(
+          configs.hello(),
+          {
+            output: '../manifest.json',
+          }
+        );
 
         assert.equal(
           path.resolve(compiler.options.output.path, '../manifest.json'),
@@ -121,10 +147,7 @@ describe('WebpackAssetsManifest', function() {
       });
 
       it('should output manifest in compiler output.path by default', function() {
-        const manifest = new WebpackAssetsManifest();
-        const compiler = makeCompiler(configs.hello());
-
-        manifest.apply(compiler);
+        const { compiler, manifest } = create( configs.hello() );
 
         assert.equal(
           compiler.options.output.path,
@@ -201,7 +224,7 @@ describe('WebpackAssetsManifest', function() {
     describe('has()', function() {
       it('should return a boolean', function() {
         const manifest = new WebpackAssetsManifest({
-          assets: Object.assign({}, require('./fixtures/images.json')),
+          assets: Object.assign({}, require('./fixtures/json/images.json')),
         });
 
         assert.isTrue(manifest.has('Ginger.jpg'));
@@ -211,7 +234,7 @@ describe('WebpackAssetsManifest', function() {
 
     describe('get()', function() {
       const manifest = new WebpackAssetsManifest({
-        assets: Object.assign({}, require('./fixtures/images.json')),
+        assets: Object.assign({}, require('./fixtures/json/images.json')),
       });
 
       it('gets a value from the manifest', function() {
@@ -250,7 +273,21 @@ describe('WebpackAssetsManifest', function() {
     });
 
     describe('inDevServer()', function() {
+      it('Identifies webpack-dev-server from process.env', function() {
+        const manifest = new WebpackAssetsManifest();
+
+        delete process.env.WEBPACK_DEV_SERVER;
+
+        assert.isFalse( manifest.inDevServer() );
+
+        process.env.WEBPACK_DEV_SERVER = true;
+
+        assert.isTrue( manifest.inDevServer() );
+      });
+
       it('Identifies webpack-dev-server from argv', function() {
+        delete process.env.WEBPACK_DEV_SERVER;
+
         const manifest = new WebpackAssetsManifest();
 
         assert.isFalse(manifest.inDevServer());
@@ -269,10 +306,7 @@ describe('WebpackAssetsManifest', function() {
 
         config.output.path = '/';
 
-        const compiler = makeCompiler(config);
-        const manifest = new WebpackAssetsManifest();
-
-        manifest.apply(compiler);
+        const { manifest } = create( config );
 
         assert.isTrue(manifest.inDevServer());
       });
@@ -303,6 +337,21 @@ describe('WebpackAssetsManifest', function() {
   });
 
   describe('Options', function() {
+    describe('enabled', function() {
+      it('does nothing if not enabled', async () => {
+        const { manifest, run } = create(
+          configs.hello(),
+          {
+            enabled: false,
+          }
+        );
+
+        await run();
+
+        expect( manifest.assets ).to.be.empty;
+      });
+    });
+
     describe('sortManifest', function() {
       const assets = {
         'd.js': 'd.js',
@@ -414,7 +463,7 @@ describe('WebpackAssetsManifest', function() {
 
       it('should set the initial assets data', function() {
         const manifest = new WebpackAssetsManifest({
-          assets: Object.assign({}, require('./fixtures/images.json')),
+          assets: Object.assign({}, require('./fixtures/json/images.json')),
           space: 0,
         });
 
@@ -431,111 +480,98 @@ describe('WebpackAssetsManifest', function() {
       it('should be sharable', function() {
         const sharedAssets = Object.create(null);
 
-        const manifest1 = new WebpackAssetsManifest({
-          assets: sharedAssets,
-        });
+        const { manifest: manifest1 } = create(
+          configs.hello(),
+          {
+            assets: sharedAssets,
+          }
+        );
 
-        const manifest2 = new WebpackAssetsManifest({
-          assets: sharedAssets,
-        });
+        const { manifest: manifest2 } = create(
+          configs.client(),
+          {
+            assets: sharedAssets,
+          }
+        );
 
         manifest1.set('main.js', 'main.js');
         manifest2.set('subpage.js', 'subpage.js');
-
-        manifest1.apply( makeCompiler( configs.hello() ) );
-        manifest2.apply( makeCompiler( configs.client() ) );
 
         assert.equal(manifest1.toString(), manifest2.toString());
       });
     });
 
     describe('merge', function() {
-      function setupManifest(compiler, manifest)
+      async function setupManifest(manifest)
       {
-        return new Promise((resolve, reject) => {
-          manifest.apply(compiler);
+        await mkdirp( path.dirname( manifest.getOutputPath() ) );
 
-          mkdirp(path.dirname(manifest.getOutputPath()))
-            .then( () => {
-              try {
-                fs.copySync( path.resolve(__dirname, 'fixtures/sample-manifest.json'), manifest.getOutputPath());
-                resolve({ compiler, manifest });
-              } catch (err) {
-                reject(err);
-              }
-            })
-            .catch(reject);
-        });
+        await fs.promises.copyFile(
+          path.resolve(__dirname, 'fixtures/json/sample-manifest.json'),
+          manifest.getOutputPath()
+        );
+
+        return manifest;
       }
 
-      it('should merge data if output file exists', function(done) {
-        const compiler = makeCompiler(configs.hello());
+      it('should merge data if output file exists', async () => {
+        const { manifest, run } = create(
+          configs.hello(),
+          {
+            merge: true,
+            space: 0,
+          }
+        );
 
-        const manifest = new WebpackAssetsManifest({
-          merge: true,
-          space: 0,
-        });
+        await setupManifest(manifest);
+        await run();
 
-        setupManifest(compiler, manifest)
-          .then(() => {
-            compiler.run(function( err ) {
-              assert.isNull(err, 'Error found in compiler.run');
-
-              assert.equal(
-                '{"Ginger.jpg":"images/Ginger.jpg","main.js":"bundle.js"}',
-                manifest.toString()
-              );
-
-              done();
-            });
-          });
+        assert.equal(
+          '{"Ginger.jpg":"images/Ginger.jpg","main.js":"bundle.js"}',
+          manifest.toString()
+        );
       });
 
-      it('can customize during merge', function(done) {
+      it('can customize during merge', async () => {
         const mergingResults = [];
-        const compiler = makeCompiler(configs.hello());
-        const manifest = new WebpackAssetsManifest({
-          merge: 'customize',
-          space: 0,
-          customize(entry, original, manifest) {
-            assert.isBoolean(manifest.isMerging);
-            mergingResults.push(manifest.isMerging);
-          },
-        });
+        const { manifest, run } = create(
+          configs.hello(),
+          {
+            merge: 'customize',
+            space: 0,
+            customize(entry, original, manifest) {
+              assert.isBoolean(manifest.isMerging);
+              mergingResults.push(manifest.isMerging);
+            },
+          }
+        );
 
-        setupManifest(compiler, manifest)
-          .then(() => {
-            compiler.run(function( err ) {
-              assert.isNull(err, 'Error found in compiler.run');
-              assert.isTrue( mergingResults.some( r => r === true ) );
-              assert.isTrue( mergingResults.some( r => r === false ) );
+        await setupManifest(manifest);
+        await run();
 
-              done();
-            });
-          });
+        assert.isTrue( mergingResults.some( r => r === true ) );
+        assert.isTrue( mergingResults.some( r => r === false ) );
       });
 
-      it('merge skips customize()', function(done) {
-        let customizeCalled = false;
-        const compiler = makeCompiler(configs.hello());
-        const manifest = new WebpackAssetsManifest({
-          merge: true,
-          customize(entry, original, manifest) {
-            if ( manifest.isMerging ) {
-              customizeCalled = true;
-            }
-          },
-        });
+      it('merge skips customize()', async () => {
+        const mock = chai.spy();
 
-        setupManifest(compiler, manifest)
-          .then(() => {
-            compiler.run(function( err ) {
-              assert.isNull(err, 'Error found in compiler.run');
-              assert.isFalse( customizeCalled );
+        const { manifest, run } = create(
+          configs.hello(),
+          {
+            merge: true,
+            customize(entry, original, manifest) {
+              if ( manifest.isMerging ) {
+                mock();
+              }
+            },
+          }
+        );
 
-              done();
-            });
-          });
+        await setupManifest(manifest);
+        await run();
+
+        expect( mock ).to.not.have.been.called();
       });
     });
 
@@ -555,42 +591,38 @@ describe('WebpackAssetsManifest', function() {
         assert.equal( manifest.get('hello'), 'assets/world' );
       });
 
-      it('can be true', function(done) {
+      it('can be true', async () => {
         const config = configs.hello();
 
         config.output.publicPath = cdn.default;
 
-        const compiler = makeCompiler(config);
-        const manifest = new WebpackAssetsManifest({
-          publicPath: true,
-        });
+        const { manifest, run } = create(
+          config,
+          {
+            publicPath: true,
+          }
+        );
 
-        manifest.apply(compiler);
+        await run();
 
-        compiler.run(function( err ) {
-          assert.isNull(err, 'Error found in compiler.run');
-          assert.equal( cdn.default + 'bundle.js', manifest.get('main.js') );
-          done();
-        });
+        assert.equal( cdn.default + 'bundle.js', manifest.get('main.js') );
       });
 
-      it('has no affect if false', function(done) {
+      it('has no effect if false', async () => {
         const config = configs.hello();
 
         config.output.publicPath = cdn.default;
 
-        const compiler = makeCompiler(config);
-        const manifest = new WebpackAssetsManifest({
-          publicPath: false,
-        });
+        const { manifest, run } = create(
+          config,
+          {
+            publicPath: false,
+          }
+        );
 
-        manifest.apply(compiler);
+        await run();
 
-        compiler.run(function( err ) {
-          assert.isNull(err, 'Error found in compiler.run');
-          assert.equal('bundle.js', manifest.get('main.js') );
-          done();
-        });
+        assert.equal('bundle.js', manifest.get('main.js') );
       });
 
       it('only prefixes strings', function() {
@@ -624,17 +656,17 @@ describe('WebpackAssetsManifest', function() {
 
     describe('customize', function() {
       it('customizes the key and value', function() {
-        const compiler = makeCompiler(configs.hello());
-        const manifest = new WebpackAssetsManifest({
-          customize(entry) {
-            return {
-              key: entry.key.toUpperCase(),
-              value: entry.value.toUpperCase(),
-            };
-          },
-        });
-
-        manifest.apply(compiler);
+        const { manifest } = create(
+          configs.hello(),
+          {
+            customize(entry) {
+              return {
+                key: entry.key.toUpperCase(),
+                value: entry.value.toUpperCase(),
+              };
+            },
+          }
+        );
 
         manifest.set('hello', 'world');
 
@@ -643,16 +675,16 @@ describe('WebpackAssetsManifest', function() {
       });
 
       it('customizes the key', function() {
-        const compiler = makeCompiler(configs.hello());
-        const manifest = new WebpackAssetsManifest({
-          customize(entry) {
-            return {
-              key: entry.key.toUpperCase(),
-            };
-          },
-        });
-
-        manifest.apply(compiler);
+        const { manifest } = create(
+          configs.hello(),
+          {
+            customize(entry) {
+              return {
+                key: entry.key.toUpperCase(),
+              };
+            },
+          }
+        );
 
         manifest.set('hello', 'world');
 
@@ -662,16 +694,16 @@ describe('WebpackAssetsManifest', function() {
       });
 
       it('customizes the value', function() {
-        const compiler = makeCompiler(configs.hello());
-        const manifest = new WebpackAssetsManifest({
-          customize(entry) {
-            return {
-              value: entry.value.toUpperCase(),
-            };
-          },
-        });
-
-        manifest.apply(compiler);
+        const { manifest } = create(
+          configs.hello(),
+          {
+            customize(entry) {
+              return {
+                value: entry.value.toUpperCase(),
+              };
+            },
+          }
+        );
 
         manifest.set('hello', 'world');
 
@@ -680,15 +712,15 @@ describe('WebpackAssetsManifest', function() {
         assert.equal( manifest.get('hello'), 'WORLD' );
       });
 
-      it('has no affect unless an object or false is returned', function() {
-        const compiler = makeCompiler(configs.hello());
-        const manifest = new WebpackAssetsManifest({
-          customize() {
-            return 3.14;
-          },
-        });
-
-        manifest.apply(compiler);
+      it('has no effect unless an object or false is returned', function() {
+        const { manifest } = create(
+          configs.hello(),
+          {
+            customize() {
+              return 3.14;
+            },
+          }
+        );
 
         manifest.set('hello', 'world');
 
@@ -697,14 +729,14 @@ describe('WebpackAssetsManifest', function() {
       });
 
       it('skips adding asset if false is returned', function() {
-        const compiler = makeCompiler(configs.hello());
-        const manifest = new WebpackAssetsManifest({
-          customize() {
-            return false;
-          },
-        });
-
-        manifest.apply(compiler);
+        const { manifest } = create(
+          configs.hello(),
+          {
+            customize() {
+              return false;
+            },
+          }
+        );
 
         manifest.set('hello', 'world');
 
@@ -715,165 +747,171 @@ describe('WebpackAssetsManifest', function() {
 
     describe('integrityHashes', function() {
       it('invalid crypto hashes are filtered out', function() {
-        const compiler = makeCompiler(configs.hello());
-
-        const manifest = new WebpackAssetsManifest({
-          integrityHashes: [ 'sha256', 'invalid-algorithm' ],
-        });
-
-        manifest.apply(compiler);
+        const { manifest } = create(
+          configs.hello(),
+          {
+            integrityHashes: [ 'sha256', 'invalid-algorithm' ],
+          }
+        );
 
         assert.notInclude(manifest.options.integrityHashes, 'invalid-algorithm');
       });
     });
 
     describe('integrity', function() {
-      it('manifest entry contains an integrity property', function(done) {
-        const compiler = makeCompiler(configs.hello());
-        const manifest = new WebpackAssetsManifest({
-          integrity: true,
-        });
+      it('manifest entry contains an integrity property', async () => {
+        const { manifest, run } = create(
+          configs.hello(),
+          {
+            integrity: true,
+          }
+        );
 
-        manifest.apply(compiler);
+        await run();
 
-        compiler.run(function( err ) {
-          assert.isNull(err, 'Error found in compiler.run');
+        const asset = manifest.get('main.js');
 
-          const asset = manifest.get('main.js');
-
-          assert.typeOf(asset, 'object');
-          assert.property(asset, 'integrity');
-
-          done();
-        });
+        assert.typeOf(asset, 'object');
+        assert.property(asset, 'integrity');
+        assert.isNotEmpty( asset.integrity );
       });
     });
 
     describe('integrityPropertyName', function() {
-      it('Assigns SRI hashes to currentAsset[ integrityPropertyName ]', function(done) {
+      it('Assigns SRI hashes to currentAsset.info[ integrityPropertyName ]', async () => {
         const integrityPropertyName = 'sri';
-        const compiler = makeCompiler(configs.hello());
-        const manifest = new WebpackAssetsManifest({
-          integrity: true,
-          integrityHashes: [ 'md5' ],
-          integrityPropertyName,
-          customize(entry, original, manifest, asset) {
-            assert.containsAllKeys(
-              asset,
-              [ integrityPropertyName ],
-              `asset is missing ${integrityPropertyName} property`
-            );
-          },
-        });
+        const { run } = create(
+          configs.hello(),
+          {
+            integrity: true,
+            integrityHashes: [ 'md5' ],
+            integrityPropertyName,
+            customize(entry, original, manifest, asset) {
+              assert.containsAllKeys(
+                asset.info,
+                [ integrityPropertyName ],
+                `asset.info is missing ${integrityPropertyName} property`
+              );
+            },
+          }
+        );
 
-        manifest.apply(compiler);
+        await run();
+      });
 
-        compiler.run(function( err ) {
-          assert.isNull(err, 'Error found in compiler.run');
+      it('Does not overwrite existing currentAsset.info[ integrityPropertyName ]', async () => {
+        const { manifest, run } = create(
+          configs.hello(),
+          {
+            integrity: true,
+            integrityHashes: [ 'md5' ],
+            apply(manifest) {
+              manifest.compiler.hooks.compilation.tap(
+                'test',
+                compilation => {
+                  chai.spy.on(compilation.assetsInfo, 'get', () => ({
+                    [ manifest.options.integrityPropertyName ]: 'test',
+                  }));
+                }
+              );
+            },
+          }
+        );
 
-          done();
-        });
+        await run();
+
+        expect( manifest.get('main.js')[ manifest.options.integrityPropertyName ] ).to.equal('test');
       });
     });
 
     describe('entrypoints', function() {
-      it('entrypoints are included in manifest', function(done) {
-        const compiler = makeCompiler(configs.hello());
-        const manifest = new WebpackAssetsManifest({
-          entrypoints: true,
-        });
+      it('entrypoints are included in manifest', async () => {
+        const { manifest, run } = create(
+          configs.hello(),
+          {
+            entrypoints: true,
+          }
+        );
 
-        manifest.apply(compiler);
+        await run();
 
-        compiler.run(function( err ) {
-          assert.isNull(err, 'Error found in compiler.run');
+        const entrypoints = manifest.get('entrypoints');
 
-          const entrypoints = manifest.get('entrypoints');
-
-          assert.typeOf(entrypoints, 'object');
-
-          done();
-        });
+        assert.typeOf(entrypoints, 'object');
       });
     });
 
     describe('entrypointsKey', function() {
-      it('customize the key used for entrypoints', function(done) {
-        const compiler = makeCompiler(configs.hello());
-        const manifest = new WebpackAssetsManifest({
-          entrypoints: true,
-          entrypointsKey: 'myEntrypoints',
-        });
+      it('customize the key used for entrypoints', async () => {
+        const { manifest, run } = create(
+          configs.hello(),
+          {
+            entrypoints: true,
+            entrypointsKey: 'myEntrypoints',
+          }
+        );
 
-        manifest.apply(compiler);
+        await run();
 
-        compiler.run(function( err ) {
-          assert.isNull(err, 'Error found in compiler.run');
+        const entrypoints = manifest.get('myEntrypoints');
 
-          const entrypoints = manifest.get('myEntrypoints');
-
-          assert.typeOf(entrypoints, 'object');
-
-          done();
-        });
+        assert.typeOf(entrypoints, 'object');
       });
 
-      it('can be false', function(done) {
-        const compiler = makeCompiler(configs.hello());
-        const manifest = new WebpackAssetsManifest({
-          entrypoints: true,
-          entrypointsKey: false,
-        });
+      it('can be false', async () => {
+        const { manifest, run } = create(
+          configs.hello(),
+          {
+            entrypoints: true,
+            entrypointsKey: false,
+          }
+        );
 
-        manifest.apply(compiler);
+        await run();
 
-        compiler.run(function( err ) {
-          assert.isNull(err, 'Error found in compiler.run');
+        const entrypoint = manifest.get('main');
 
-          const entrypoint = manifest.get('main');
-
-          assert.typeOf(entrypoint, 'object');
-
-          done();
-        });
+        assert.typeOf(entrypoint, 'object');
       });
     });
 
     describe('done', function() {
-      it('is called when compilation is done', function(done) {
-        const compiler = makeCompiler(configs.hello());
-        const manifest = new WebpackAssetsManifest({
-          done() {
-            done();
-          },
-        });
+      it('is called when compilation is done', async () => {
+        const mock = chai.spy();
+        const { run } = create(
+          configs.hello(),
+          {
+            done() {
+              mock();
+            },
+          }
+        );
 
-        manifest.apply(compiler);
+        await run();
 
-        compiler.run(function( err ) {
-          assert.isNull(err, 'Error found in compiler.run');
-        });
+        expect( mock ).to.have.been.called;
       });
     });
 
     describe('contextRelativeKeys', function() {
-      it('has been removed - warning message should be displayed', function() {
-        const compiler = makeCompiler(configs.hello());
-        const manifest = new WebpackAssetsManifest({
-          contextRelativeKeys: true,
-        });
+      it('keys are filepaths relative to the compiler context', async () => {
+        const { manifest, run } = create(
+          configs.client(),
+          {
+            contextRelativeKeys: true,
+          }
+        );
 
-        manifest.apply(compiler);
+        await run();
 
-        expect( console.warn ).to.have.been.called();
+        expect( manifest.get('client.js') ).to.equal('client.js');
+        expect( manifest.get('test/fixtures/images/Ginger.asset.jpg') ).to.equal('images/Ginger.asset.jpg');
       });
     });
 
     describe('Default options', function() {
       it('Defaults are used', function() {
-        const manifest = new WebpackAssetsManifest();
-
-        manifest.apply( makeCompiler(configs.hello()) );
+        const { manifest } = create( configs.hello() );
 
         expect( manifest.options ).to.deep.equal( manifest.defaultOptions );
       });
@@ -882,11 +920,12 @@ describe('WebpackAssetsManifest', function() {
     describe('Schema validation', function() {
       it('Error is thrown if options schema validation fails', function() {
         expect(() => {
-          const manifest = new WebpackAssetsManifest({
-            space: false,
-          });
-
-          manifest.apply( makeCompiler( configs.hello() ) );
+          create(
+            configs.hello(),
+            {
+              space: false,
+            }
+          );
         }).to.throw();
       });
     });
@@ -894,14 +933,15 @@ describe('WebpackAssetsManifest', function() {
 
   describe('Hooks', function() {
     it('Callbacks passed in options are tapped', function() {
-      const manifest = new WebpackAssetsManifest({
-        apply: () => {},
-        customize: () => {},
-        transform: () => {},
-        done: () => {},
-      });
-
-      manifest.apply( makeCompiler( configs.hello() ) );
+      const { manifest } = create(
+        configs.hello(),
+        {
+          apply: () => {},
+          customize: () => {},
+          transform: () => {},
+          done: () => {},
+        },
+      );
 
       expect( manifest.hooks.apply.taps.length ).to.be.at.least(1);
       expect( manifest.hooks.customize.taps.length ).to.be.at.least(1);
@@ -912,15 +952,15 @@ describe('WebpackAssetsManifest', function() {
     describe('Apply', function() {
       it('Is called after the manifest is set up', function() {
         const mock = chai.spy();
-        const manifest = new WebpackAssetsManifest({
-          apply() {
-            mock();
-          },
-        });
 
-        expect( mock ).to.not.have.been.called();
-
-        manifest.apply( makeCompiler( configs.hello() ) );
+        create(
+          configs.hello(),
+          {
+            apply() {
+              mock();
+            },
+          }
+        );
 
         expect( mock ).to.have.been.called();
       });
@@ -928,13 +968,14 @@ describe('WebpackAssetsManifest', function() {
 
     describe('Customize', function() {
       it('Can customize an entry', function() {
-        const manifest = new WebpackAssetsManifest({
-          customize(entry) {
-            entry.value = 'customized';
-          },
-        });
-
-        manifest.apply( makeCompiler( configs.hello() ) );
+        const { manifest } = create(
+          configs.hello(),
+          {
+            customize(entry) {
+              entry.value = 'customized';
+            },
+          }
+        );
 
         manifest.set('key', 'not customized');
 
@@ -944,16 +985,19 @@ describe('WebpackAssetsManifest', function() {
 
     describe('Options', function() {
       it('Options can be altered with a hook', function() {
-        const manifest = new WebpackAssetsManifest();
         const mock = chai.spy( options => {
           options.testing = true;
 
           return options;
         });
 
-        manifest.hooks.options.tap('test', mock );
-
-        manifest.apply( makeCompiler( configs.hello() ) );
+        const { manifest } = create(
+          configs.hello(),
+          [
+            undefined,
+            manifest => manifest.hooks.options.tap('test', mock ),
+          ]
+        );
 
         expect( mock ).to.have.been.called();
 
@@ -963,121 +1007,93 @@ describe('WebpackAssetsManifest', function() {
 
     describe('Transform', function() {
       it('Transforms the data', function() {
-        const compiler = makeCompiler(configs.hello());
-        const manifest = new WebpackAssetsManifest({
-          space: 0,
-          transform(assets) {
-            return { assets };
-          },
-        });
-
-        manifest.apply(compiler);
+        const { manifest } = create(
+          configs.hello(),
+          {
+            space: 0,
+            transform(assets) {
+              return { assets };
+            },
+          }
+        );
 
         expect(`${manifest}`).to.equal('{"assets":{}}');
       });
     });
 
     describe('Done', function() {
-      it('Is called when the compilation is done', function(done) {
+      it('Is called when the compilation is done', async () => {
         const mock = chai.spy();
-        const compiler = makeCompiler( configs.hello() );
-        const manifest = new WebpackAssetsManifest({
-          done() {
-            mock();
-          },
-        });
+        const { run } = create(
+          configs.hello(),
+          [
+            {
+              done() {
+                mock();
+              },
+            },
+            () => {
+              expect( mock ).to.not.have.been.called();
+            },
+          ]
+        );
 
-        expect( mock ).to.not.have.been.called();
+        await run();
 
-        manifest.apply( compiler );
-
-        compiler.run( err => {
-          expect( err ).to.be.null;
-          expect( mock ).to.have.been.called();
-
-          done();
-        });
+        expect( mock ).to.have.been.called();
       });
     });
   });
 
   describe('Usage with webpack', function() {
-    it('writes to disk', function(done) {
-      const compiler = makeCompiler(configs.hello());
-      const manifest = new WebpackAssetsManifest({
-        writeToDisk: true,
-      });
+    it('writes to disk', async () => {
+      const { manifest, run } = create(
+        configs.hello(),
+        {
+          writeToDisk: true,
+        }
+      );
 
-      manifest.apply(compiler);
+      await run();
 
-      compiler.run(function( err ) {
-        assert.isNull(err, 'Error found in compiler.run');
+      const content = await fs.promises.readFile( manifest.getOutputPath() );
 
-        fs.readFile(
-          manifest.getOutputPath(),
-          function(err, content) {
-            assert.isNull(err, 'Error found reading manifest.json');
-
-            assert.equal(manifest.toString(), content.toString());
-
-            done();
-          }
-        );
-      });
+      assert.equal( manifest.toString(), content.toString() );
     });
 
-    it('compiler has error if unable to create directory', function(done) {
+    it('compiler has error if unable to create directory', async () => {
       fs.chmodSync(configs.getWorkspace(), _444);
 
-      const compiler = makeCompiler(configs.hello());
-      const manifest = new WebpackAssetsManifest({
-        writeToDisk: true,
-      });
+      const { run } = create(
+        configs.hello(),
+        undefined,
+        webpack
+      );
 
-      manifest.apply(compiler);
+      const error = await run().catch( error => error );
 
-      compiler.run(function( err ) {
-        assert.isNotNull(err, 'Permissions error not found');
-        assert.equal('EACCES', err.code);
+      assert.isNotNull(error, 'Permissions error not found');
+      assert.equal('EACCES', error.code);
 
-        fs.chmodSync(configs.getWorkspace(), _777);
-
-        done();
-      });
+      fs.chmodSync(configs.getWorkspace(), _777);
     });
 
-    it('finds module assets', function(done) {
-      const compiler = webpack(configs.client());
-      const manifest = new WebpackAssetsManifest();
+    it('finds module assets', async () => {
+      const { manifest, run } = create( configs.client( true ) );
 
-      manifest.apply(compiler);
+      await run();
 
-      compiler.run(function( err ) {
-        assert.isNull(err, 'Error found in compiler.run');
-        fs.readFile(
-          manifest.getOutputPath(),
-          function(err, content) {
-            assert.isNull(err, 'Error found reading manifest.json');
-
-            assert.include(content.toString(), 'images/Ginger.jpg');
-
-            done();
-          }
-        );
-      });
+      assert.isTrue( manifest.has('images/Ginger.asset.jpg') );
     });
 
-    it('should support multi compiler mode', function(done) {
-      let manifestPath = null;
+    it('should support multi compiler mode', done => {
       const assets = Object.create(null);
-      const multiConfig = configs.multi().map(function(config) {
+      const multiConfig = configs.multi().map( config => {
         config.plugins = [
           new WebpackAssetsManifest({
             assets,
           }),
         ];
-
-        manifestPath = path.join( config.output.path, 'manifest.json' );
 
         return config;
       });
@@ -1085,65 +1101,134 @@ describe('WebpackAssetsManifest', function() {
       webpack(multiConfig, function( err ) {
         assert.isNull(err, 'Error found in compiler.run');
 
+        const manifestPath = multiConfig[ 0 ].plugins[ 0 ].getOutputPath();
+
         fs.readFile(
           manifestPath,
           function(err, content) {
-            assert.isNull(err, 'Error found reading manifest.json');
+            assert.isNull(err, 'Error reading assets manifest');
             assert.include(content.toString(), 'client.js');
             assert.include(content.toString(), 'server.js');
-            assert.include(content.toString(), 'images/Ginger.jpg');
+            assert.include(content.toString(), 'images/Ginger.asset.jpg');
 
             done();
           }
         );
       });
     });
+
+    describe('Handles complex configurations', () => {
+      let manifest;
+
+      before(() => {
+        const created = create(
+          configs.complex(),
+          {
+            output: '../assets-manifest.json',
+            integrity: true,
+            integrityHashes: [ 'md5' ],
+            entrypoints: true,
+            publicPath: true,
+            contextRelativeKeys: false,
+            customize(entry, original, manifest, asset) {
+              if ( entry.key.toLowerCase().startsWith('main') ) {
+                return false;
+              }
+
+              return {
+                value: {
+                  publicPath: entry.value,
+                  value: original.value,
+                  integrity: asset.info[ manifest.options.integrityPropertyName ],
+                },
+              };
+            },
+            transform(assets) {
+              const { entrypoints, ...others } = assets;
+
+              return {
+                entrypoints,
+                assets: others,
+              };
+            },
+          }
+        );
+
+        manifest = created.manifest;
+
+        return created.run();
+      });
+
+      it('main assets were excluded in customize()', () => {
+        const { assets } = manifest.toJSON();
+
+        expect( assets ).to.not.have.keys([ 'main.js', 'main.css' ]);
+      });
+
+      it('asset names point to the same file due to module.rules config', () => {
+        const { assets } = manifest.toJSON();
+
+        expect( assets[ 'images/Ginger.asset.jpg' ] ).to.deep.equal( assets[ 'images/Ginger.loader.jpg' ] );
+      });
+
+      it('entrypoints can have customized values', () => {
+        const { assets, entrypoints } = manifest.toJSON();
+
+        expect( entrypoints.complex.js[ 0 ] ).to.deep.equal( assets[ 'complex.js' ] );
+      });
+
+      it('entrypoints use default values when corresponding asset is not found (excluded during customize)', () => {
+        const { entrypoints } = manifest.toJSON();
+
+        expect( entrypoints.main ).to.deep.equal({
+          css: [ 'main.css' ],
+          js: [ 'main.js' ],
+        });
+      });
+    });
   });
 
   describe('Errors writing file to disk', function() {
-    it('has error creating directory', function(done) {
+    it('has error creating directory', async () => {
       fs.chmodSync(configs.getWorkspace(), _444);
 
-      const compiler = webpack(configs.hello());
-      const manifest = new WebpackAssetsManifest({
-        writeToDisk: true,
-      });
+      const { run } = create(
+        configs.hello(),
+        undefined,
+        webpack
+      );
 
-      manifest.apply(compiler);
+      const error = await run().catch( error => error );
 
-      compiler.run(function( err ) {
-        assert.isNotNull(err, 'Permissions error not found');
-        assert.equal('EACCES', err.code);
+      assert.isNotNull(error, 'Permissions error not found');
+      assert.equal('EACCES', error.code);
 
-        fs.chmodSync(configs.getWorkspace(), _777);
-
-        done();
-      });
+      fs.chmodSync(configs.getWorkspace(), _777);
     });
 
-    it('has error writing file', function(done) {
-      const compiler = webpack(configs.hello());
-      const manifest = new WebpackAssetsManifest({
-        writeToDisk: true,
-      });
+    it('has error writing file', done => {
+      const { compiler, manifest, run } = create(
+        configs.hello(),
+        undefined,
+        webpack
+      );
 
-      manifest.apply(compiler);
-
-      compiler.outputFileSystem.mkdirp(
+      webpack_mkdirp(
+        compiler.outputFileSystem,
         path.dirname(manifest.getOutputPath()),
-        function(err) {
-          assert.isNull(err, 'Error found when creating directory');
+        async err => {
+          assert.isUndefined(err, 'Error found when creating directory');
 
           fs.writeFileSync(manifest.getOutputPath(), '', { mode: _444 });
 
-          compiler.run(function( err ) {
-            assert.isNotNull(err, 'Permissions error not found');
-            assert.equal('EACCES', err.code);
+          const error = await run().catch( error => error );
 
-            fs.chmodSync(manifest.getOutputPath(), _777);
+          assert.isNotNull(error, 'Permissions error not found');
+          assert.equal('EACCES', error.code);
 
-            done();
-          });
+          fs.chmodSync(manifest.getOutputPath(), _777);
+
+          done();
         }
       );
     });
@@ -1154,13 +1239,15 @@ describe('WebpackAssetsManifest', function() {
       publicPath: '/assets/',
       quiet: true,
       noInfo: true,
+      hot: true,
     });
 
-    it('inDevServer() should return true', function(done) {
-      const compiler = makeCompiler(configs.devServer());
-      const manifest = new WebpackAssetsManifest();
-
-      manifest.apply(compiler);
+    it('inDevServer() should return true', done => {
+      const { compiler, manifest } = create(
+        configs.devServer(),
+        undefined,
+        webpack
+      );
 
       const server = new WebpackDevServer(compiler, getOptions());
 
@@ -1173,17 +1260,18 @@ describe('WebpackAssetsManifest', function() {
       });
     });
 
-    it('Should serve /assets/manifest.json', function(done) {
-      const compiler = makeCompiler(configs.devServer());
-      const manifest = new WebpackAssetsManifest();
-
-      manifest.apply(compiler);
+    it('Should serve the assets manifest JSON file', done => {
+      const { compiler } = create(
+        configs.devServer(),
+        undefined,
+        webpack
+      );
 
       const server = new WebpackDevServer(compiler, getOptions());
 
       server.listen(8888, 'localhost', function() {
         superagent
-          .get('http://localhost:8888/assets/manifest.json')
+          .get('http://localhost:8888/assets/assets-manifest.json')
           .end(function(err, res) {
             if ( err ) {
               throw err;
@@ -1198,16 +1286,16 @@ describe('WebpackAssetsManifest', function() {
       });
     });
 
-    it('Should write to disk using absolute output path', function(done) {
+    it('Should write to disk using absolute output path', done => {
       const config = configs.devServer( configs.tmpDirPath() );
-
-      const compiler = makeCompiler(config);
-      const manifest = new WebpackAssetsManifest({
-        output: path.join( config.output.path, 'manifest.json' ),
-        writeToDisk: true,
-      });
-
-      manifest.apply(compiler);
+      const { compiler, manifest } = create(
+        config,
+        {
+          output: path.join( config.output.path, 'manifest.json' ),
+          writeToDisk: true,
+        },
+        webpack
+      );
 
       const server = new WebpackDevServer(compiler, getOptions());
 
@@ -1228,20 +1316,20 @@ describe('WebpackAssetsManifest', function() {
       });
     });
 
-    it('Should write to cwd if no output paths are specified', function(done) {
-      const config = configs.devServer();
-      const compiler = makeCompiler(config);
-      const manifest = new WebpackAssetsManifest({
-        writeToDisk: true,
-      });
-
-      manifest.apply(compiler);
+    it('Should write to cwd if no output paths are specified', done => {
+      const { compiler, manifest } = create(
+        configs.devServer(),
+        {
+          writeToDisk: true,
+        },
+        webpack
+      );
 
       const server = new WebpackDevServer(compiler, getOptions());
 
       server.listen(8888, 'localhost', function() {
         superagent
-          .get('http://localhost:8888/assets/manifest.json')
+          .get('http://localhost:8888/assets/assets-manifest.json')
           .end(function(err) {
             if ( err ) {
               throw err;
@@ -1261,29 +1349,26 @@ describe('WebpackAssetsManifest', function() {
 
   describe('Hot module replacement', function() {
     it('Should ignore HMR files', function() {
-      const manifest = new WebpackAssetsManifest();
       const config = configs.hello();
 
       config.output.hotUpdateChunkFilename = '[id].[hash:6].hot-update.js';
 
-      manifest.apply(makeCompiler(config));
+      const { manifest } = create( config );
 
       manifest.processAssetsByChunkName({
         main: [ 'main.123456.js', '0.123456.hot-update.js' ],
       });
 
-      assert.equal( manifest.assetNames.get('main.123456.js'), 'main.js' );
-
-      assert.isFalse( manifest.assetNames.has('0.123456.hot-update.js') );
+      assert.equal( manifest.assetNames.get('main.js'), 'main.123456.js' );
+      assert.isFalse( [ ...manifest.assetNames.values() ].includes('0.123456.hot-update.js') );
     });
 
     it('isHMR should return false when hotUpdateChunkFilename is ambiguous', function() {
-      const manifest = new WebpackAssetsManifest();
       const config = configs.client();
 
       config.output.hotUpdateChunkFilename = config.output.filename;
 
-      manifest.apply(makeCompiler(config));
+      const { manifest } = create( config );
 
       assert.isFalse( manifest.isHMR('main.js') );
       assert.isFalse( manifest.isHMR('0.123456.hot-update.js') );
@@ -1291,24 +1376,33 @@ describe('WebpackAssetsManifest', function() {
   });
 
   describe('Works with css files', function() {
-    it('Correct filenames are used', function(done) {
-      const manifest = new WebpackAssetsManifest({
-        space: 0,
-      });
-      const compiler = makeCompiler( configs.styles() );
+    it('Correct filenames are used', async () => {
+      const { manifest, run } = create( configs.styles() );
 
-      manifest.apply( compiler );
+      await run();
 
-      compiler.run(function( err ) {
-        assert.isNull(err, 'Error found in compiler.run');
+      expect( manifest.toString() ).to.contain('styles.css');
+    });
+  });
 
-        assert.equal(
-          '{"images/Ginger.jpg":"images/Ginger.jpg","styles.css":"styles.css","styles.js":"styles.js"}',
-          manifest.toString()
-        );
+  describe('Works with copy-webpack-plugin', () => {
+    it('Correct filenames are used', async () => {
+      const { manifest, run } = create( configs.copy() );
 
-        done();
-      });
+      await run();
+
+      // TODO see if copy-webpack-plugin can store the module.userRequest / module.resource in the assetInfo
+      expect( manifest.get('readme.md') ).to.equal('readme.md');
+    });
+  });
+
+  describe('Works with compression-webpack-plugin', () => {
+    it('adds gz filenames to the manifest', async () => {
+      const { manifest, run } = create( configs.compression() );
+
+      await run();
+
+      expect( manifest.get('bundle.js.gz') ).to.equal('bundle.js.gz');
     });
   });
 });

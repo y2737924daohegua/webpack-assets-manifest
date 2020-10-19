@@ -1,3 +1,4 @@
-console.log('Client');
+require('./images/Ginger.asset.jpg');
+require('./images/Ginger.loader.jpg');
 
-require('./Ginger.jpg');
+console.log('Client');
