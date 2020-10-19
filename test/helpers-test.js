@@ -12,6 +12,7 @@ const {
   varType,
   getSortedObject,
   templateStringToRegExp,
+  findMapKeysByValue,
 } = require('../src/helpers.js');
 
 describe('Helpers', function() {
@@ -151,6 +152,25 @@ describe('Helpers', function() {
 
       expect( caseInsensitive.test('demo.abc123.js') ).to.equal(true);
       expect( caseInsensitive.test('DEMO.abc123.js') ).to.equal(true);
+    });
+  });
+
+  describe('findMapKeysByValue', function() {
+    it('finds all keys that have the corresponding value', () => {
+      const data = new Map();
+
+      data.set('Ginger', 'Eric');
+      data.set('Wilson', 'Eric');
+      data.set('Oliver', 'Amy');
+      data.set('Andy', 'Amy');
+      data.set('Francis', 'Amy');
+
+      const findPetsFor = findMapKeysByValue( data );
+
+      expect( findPetsFor ).to.be.a('function');
+      expect( findPetsFor('Eric') ).to.be.an('array').that.include('Ginger', 'Wilson').and.to.have.lengthOf(2);
+      expect( findPetsFor('Amy') ).to.be.an('array').that.include('Oliver', 'Andy', 'Francis').and.to.have.lengthOf(3);
+      expect( findPetsFor('None') ).to.be.an('array').and.to.have.lengthOf(0);
     });
   });
 });

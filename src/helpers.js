@@ -98,11 +98,7 @@ function varType( v )
  */
 function getSortedObject(object, compareFunction)
 {
-  const keys = Object.keys(object);
-
-  keys.sort( compareFunction );
-
-  return keys.reduce(
+  return Object.keys( object ).sort( compareFunction ).reduce(
     (sorted, key) => (sorted[ key ] = object[ key ], sorted),
     Object.create(null)
   );
@@ -127,6 +123,20 @@ function templateStringToRegExp(input, flags = undefined)
   );
 }
 
+/**
+ * Find a Map entry key by the value
+ *
+ * @param {Map} map
+ */
+function findMapKeysByValue( map )
+{
+  const entries = [ ...map ];
+
+  return searchValue => entries
+    .filter( ([ , value ]) => value === searchValue )
+    .map( ([ name ]) => name );
+}
+
 module.exports = {
   maybeArrayWrap,
   filterHashes,
@@ -135,4 +145,5 @@ module.exports = {
   varType,
   getSortedObject,
   templateStringToRegExp,
+  findMapKeysByValue,
 };
