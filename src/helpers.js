@@ -1,6 +1,13 @@
+const os = require('os');
+const path = require('path');
 const crypto = require('crypto');
+const util = require('util');
 const chalk = require('chalk');
 const escapeRegExp = require('lodash.escaperegexp');
+const lockfile = require('lockfile');
+
+const lfLock = util.promisify(lockfile.lock);
+const lfUnlock = util.promisify(lockfile.unlock);
 
 /**
  * Display a warning message.
@@ -90,6 +97,16 @@ function varType( v )
 }
 
 /**
+ * Determine if the argument is an Object.
+ *
+ * @param {*} arg
+ */
+function isObject( arg )
+{
+  return varType( arg ) === 'Object';
+}
+
+/**
  * Get an object sorted by keys.
  *
  * @param  {object} object
@@ -137,13 +154,85 @@ function findMapKeysByValue( map )
     .map( ([ name ]) => name );
 }
 
+/**
+ * Build a file path to a lock file in the tmp directory
+ *
+ * @param {string} filename
+ */
+function getLockFilename( filename )
+{
+  const name = filename.replace(/[^\w]+/g, '-');
+
+  return path.join( os.tmpdir(), `${name}.lock` );
+}
+
+/**
+ * Create a lockfile (async)
+ *
+ * @param {string} filename
+ */
+async function lock( filename )
+{
+  await lfLock(
+    getLockFilename( filename ),
+    {
+      wait: 10000,
+      stale: 20000,
+      retries: 100,
+      retryWait: 100,
+    }
+  );
+}
+
+/**
+ * Create a lockfile
+ *
+ * @param {string} filename
+ */
+function lockSync( filename )
+{
+  return lockfile.lockSync(
+    getLockFilename( filename ),
+    {
+      stale: 20000,
+      retries: 200,
+    }
+  );
+}
+
+/**
+ * Remove a lockfile (async)
+ *
+ * @param {string} filename
+ */
+async function unlock( filename )
+{
+  await lfUnlock( getLockFilename( filename ) );
+}
+
+/**
+ * Remove a lockfile
+ *
+ * @param {string} filename
+ */
+function unlockSync( filename )
+{
+  return lockfile.unlockSync( getLockFilename( filename ) );
+}
+
 module.exports = {
   maybeArrayWrap,
   filterHashes,
   getSRIHash,
   warn,
   varType,
+  isObject,
   getSortedObject,
   templateStringToRegExp,
   findMapKeysByValue,
+  getLockFilename,
+  lock,
+  lockSync,
+  unlock,
+  unlockSync,
 };
