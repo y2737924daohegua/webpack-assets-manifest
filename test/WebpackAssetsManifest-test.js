@@ -1172,6 +1172,40 @@ describe('WebpackAssetsManifest', function() {
         });
       });
     });
+
+    describe('Uses asset.info.sourceFilename when assetNames does not have a matching asset', () => {
+      it('contextRelativeKeys is on', async () => {
+        const { manifest, run } = create(
+          configs.client(),
+          {
+            contextRelativeKeys: true,
+          }
+        );
+
+        // Pretend like assetNames is empty.
+        chai.spy.on( manifest.assetNames, 'entries', () => new Map().entries() );
+
+        await run();
+
+        assert.isTrue( manifest.has('test/fixtures/images/Ginger.asset.jpg') );
+      });
+
+      it('contextRelativeKeys is off', async () => {
+        const { manifest, run } = create(
+          configs.client(),
+          {
+            contextRelativeKeys: false,
+          }
+        );
+
+        // Pretend like assetNames is empty.
+        chai.spy.on( manifest.assetNames, 'entries', () => new Map().entries() );
+
+        await run();
+
+        assert.isTrue( manifest.has('Ginger.asset.jpg') );
+      });
+    });
   });
 
   describe('Errors writing file to disk', function() {
@@ -1389,7 +1423,6 @@ describe('WebpackAssetsManifest', function() {
 
       await run();
 
-      // TODO see if copy-webpack-plugin can store the module.userRequest / module.resource in the assetInfo
       expect( manifest.get('readme.md') ).to.equal('readme.md');
     });
   });

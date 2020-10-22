@@ -147,7 +147,7 @@ function templateStringToRegExp(input, flags = undefined)
  */
 function findMapKeysByValue( map )
 {
-  const entries = [ ...map ];
+  const entries = [ ...map.entries() ];
 
   return searchValue => entries
     .filter( ([ , value ]) => value === searchValue )

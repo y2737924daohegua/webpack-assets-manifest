@@ -500,17 +500,16 @@ class WebpackAssetsManifest
       if ( modules ) {
         for ( const module of modules ) {
           const { assetInfo, filename } = module.buildInfo;
-          const originalFilename = contextRelativeKeys ?
+          const sourceFilename = contextRelativeKeys ?
             path.relative( compilation.compiler.context, module.userRequest ) :
             path.join( path.dirname(filename), path.basename(module.userRequest) );
 
-          assetInfo.originalFilename = originalFilename;
-          assetInfo.resource = module.resource;
+          assetInfo.sourceFilename = sourceFilename;
           assetInfo.userRequest = module.userRequest;
 
           compilation.assetsInfo.set(filename, assetInfo);
 
-          this.assetNames.set(originalFilename, filename);
+          this.assetNames.set(sourceFilename, filename);
         }
       }
     }
@@ -532,14 +531,21 @@ class WebpackAssetsManifest
 
     const findAssetKeys = findMapKeysByValue( this.assetNames );
 
-    for ( const asset of compilation.getAssets() ) {
-      const originalFilenames = findAssetKeys( asset.name );
+    const { contextRelativeKeys } = this.options;
 
-      if ( ! originalFilenames.length ) {
-        originalFilenames.push( asset.name );
+    for ( const asset of compilation.getAssets() ) {
+      const sourceFilenames = findAssetKeys( asset.name );
+
+      if ( ! sourceFilenames.length ) {
+        const { sourceFilename } = asset.info;
+        const name = sourceFilename ?
+          ( contextRelativeKeys ? sourceFilename : path.basename( sourceFilename ) ) :
+          asset.name;
+
+        sourceFilenames.push( name );
       }
 
-      originalFilenames.forEach( key => {
+      sourceFilenames.forEach( key => {
         this.currentAsset = asset;
 
         this.set( key, asset.name );
@@ -650,15 +656,14 @@ class WebpackAssetsManifest
       const info = Object.assign( {}, assetInfo );
 
       if ( this.getExtension( module.userRequest ) === this.getExtension( name ) ) {
-        const originalFilename = contextRelativeKeys ?
+        const sourceFilename = contextRelativeKeys ?
           path.relative( compilation.compiler.context, module.userRequest ) :
           path.join( path.dirname(name), path.basename(module.userRequest) );
 
-        info.originalFilename = originalFilename;
-        info.resource = module.resource;
+        info.sourceFilename = sourceFilename;
         info.userRequest = module.userRequest;
 
-        this.assetNames.set(originalFilename, name);
+        this.assetNames.set(sourceFilename, name);
       }
 
       return emitFile.call(module, name, content, sourceMap, info);
