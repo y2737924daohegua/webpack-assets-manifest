@@ -1,4 +1,20 @@
 {
   "Ginger.jpg": "images/Ginger.jpg",
-  "main.js": "bundle.js"
+  "main.js": "main.js",
+  "entrypoints": {
+    "main": {
+      "css": [
+        "main.css"
+      ],
+      "js": [
+        "runtime.js",
+        "main.js"
+      ]
+    },
+    "demo": {
+      "js": [
+        "demo.js"
+      ]
+    }
+  }
 }

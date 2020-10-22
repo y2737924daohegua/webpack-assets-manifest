@@ -32,8 +32,15 @@
       "default": 2
     },
     "writeToDisk": {
-      "type": "boolean",
-      "default": false
+      "oneOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "const": "auto"
+        }
+      ],
+      "default": "auto"
     },
     "fileExtRegex": {
       "oneOf": [

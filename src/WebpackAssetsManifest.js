@@ -4,20 +4,14 @@
  * @author Eric King <eric@webdeveric.com>
  */
 
-const os = require('os');
 const fs = require('fs');
 const url = require('url');
-const util = require('util');
 const path = require('path');
 const get = require('lodash.get');
 const has = require('lodash.has');
 const { validate } = require('schema-utils');
 const { SyncHook, SyncWaterfallHook } = require('tapable');
 const { Compilation, NormalModule, sources: { RawSource } } = require('webpack');
-const lockfile = require('lockfile');
-
-const lock = util.promisify(lockfile.lock);
-const unlock = util.promisify(lockfile.unlock);
 
 /** @type {object} */
 const optionsSchema = require('./options-schema.json');
@@ -27,9 +21,14 @@ const {
   getSRIHash,
   warn,
   varType,
+  isObject,
   getSortedObject,
   templateStringToRegExp,
   findMapKeysByValue,
+  lock,
+  unlock,
+  lockSync,
+  unlockSync,
 } = require('./helpers.js');
 
 const IS_MERGING = Symbol('isMerging');
@@ -161,7 +160,7 @@ class WebpackAssetsManifest
       output: 'assets-manifest.json',
       replacer: null, // Its easier to use the transform hook instead.
       space: 2,
-      writeToDisk: false,
+      writeToDisk: 'auto',
       fileExtRegex: /\.\w{2,4}\.(?:map|gz)$|\.\w+$/i,
       sortManifest: true,
       merge: false,
@@ -288,7 +287,7 @@ class WebpackAssetsManifest
     }
 
     // Use the customized values
-    if ( varType(entry) === 'Object' ) {
+    if ( isObject( entry ) ) {
       let { key = fixedKey, value = publicPath } = entry;
 
       // If the integrity should be returned but the entry value was
@@ -403,10 +402,21 @@ class WebpackAssetsManifest
 
         const data = JSON.parse( fs.readFileSync( this.getOutputPath(), { encoding: 'utf8' } ) );
 
-        // TODO add deepmerge
-        for ( const key in data ) {
-          if ( ! this.has(key) ) {
-            this.set(key, data[ key ]);
+        const deepmerge = require('deepmerge');
+
+        const arrayMerge = (destArray, srcArray) => srcArray;
+
+        for ( const [ key, oldValue ] of Object.entries( data ) ) {
+          if ( this.has( key ) ) {
+            const currentValue = this.get(key);
+
+            if ( isObject( oldValue ) && isObject( currentValue ) ) {
+              const newValue = deepmerge( oldValue, currentValue, { arrayMerge });
+
+              this.set( key, newValue );
+            }
+          } else {
+            this.set( key, oldValue );
           }
         }
       } catch (err) { // eslint-disable-line
@@ -445,20 +455,38 @@ class WebpackAssetsManifest
     return grouped;
   }
 
+  /**
+   * Emit the assets manifest
+   *
+   * @param {object} compilation
+   */
   emitAssetsManifest(compilation)
   {
-    this.maybeMerge();
-
     const output = this.getManifestPath(
       compilation,
       this.inDevServer() ?
-        path.basename( this.getOutputPath() ) :
+        path.basename( this.options.output ) :
         path.relative( compilation.compiler.outputPath, this.getOutputPath() )
     );
 
+    if ( this.options.merge ) {
+      lockSync( output );
+    }
+
+    this.maybeMerge();
+
     compilation.emitAsset( output, new RawSource(this.toString(), false) );
+
+    if ( this.options.merge ) {
+      unlockSync( output );
+    }
   }
 
+  /**
+   * Record details of Asset Modules
+   *
+   * @param {*} compilation
+   */
   handleProcessAssetsAnalyse( compilation /* , assets */ )
   {
     const { contextRelativeKeys } = this.options;
@@ -488,6 +516,11 @@ class WebpackAssetsManifest
     }
   }
 
+  /**
+   * Gather asset details
+   *
+   * @param {object} compilation
+   */
   handleAfterProcessAssets( compilation /* , assets */ )
   {
     const stats = compilation.getStats().toJson({
@@ -551,48 +584,51 @@ class WebpackAssetsManifest
    */
   async writeTo(destination)
   {
-    const lockfileName = path.join( os.tmpdir(), path.basename( destination ) + '.lock' );
+    await lock( destination );
 
-    await lock(
-      lockfileName,
-      {
-        wait: 10000,
-        stale: 20000,
-        retries: 100,
-        retryWait: 100,
-      }
-    );
+    await fs.promises.mkdir( path.dirname(destination), { recursive: true } );
 
-    const folder = path.dirname(destination);
+    await fs.promises.writeFile( destination, this.toString() );
 
-    await fs.promises.mkdir(folder, { recursive: true });
-
-    await fs.promises.writeFile(destination, this.toString());
-
-    await unlock( lockfileName );
+    await unlock( destination );
   }
 
+  /**
+   * Cleanup before running Webpack
+   */
   handleBeforeRun()
   {
     this.assetNames.clear();
   }
 
   /**
-   * Cleanup tasks
+   * Determine if the manifest should be written to disk with fs.
+   *
+   * @param {object} compilation
+   * @return {boolean}
+   */
+  shouldWriteToDisk(compilation)
+  {
+    if ( this.options.writeToDisk === 'auto' ) {
+      // Return true if using webpack-dev-server and the manifest output is above the compiler outputPath.
+      return this.inDevServer() &&
+        path.relative(
+          this.compiler.outputPath,
+          this.getManifestPath( compilation, this.getOutputPath() )
+        ).startsWith('..');
+    }
+
+    return this.options.writeToDisk;
+  }
+
+  /**
+   * Last chance to write the manifest to disk.
    *
    * @param  {object} compilation - the Webpack compilation object
    */
   async handleAfterEmit(compilation)
   {
-    // TODO Update conditional
-    // - is destination outside of the CWD?
-    // - inDevServer()
-    // const destination = this.getManifestPath( compilation, this.getOutputPath() );
-    // console.log(`outputPath = ${this.compiler.outputPath}`);
-    // console.log(`destination = ${destination}`);
-    // const isAboveOutputPath = path.relative( this.compiler.outputPath, destination ).startsWith('..');
-
-    if ( this.options.writeToDisk ) {
+    if ( this.shouldWriteToDisk(compilation) ) {
       await this.writeTo( this.getManifestPath( compilation, this.getOutputPath() ) );
     }
   }
@@ -688,16 +724,13 @@ class WebpackAssetsManifest
   /**
    * Determine if webpack-dev-server is being used
    *
+   * The WEBPACK_DEV_SERVER env var was added in webpack-dev-server 3.4.1
+   *
    * @return {boolean}
    */
   inDevServer()
   {
-    // The WEBPACK_DEV_SERVER env var was added in webpack-dev-server 3.4.1
-    if ( process.env.WEBPACK_DEV_SERVER || process.argv.some(arg => arg.includes('webpack-dev-server') ) ) {
-      return true;
-    }
-
-    return has(this, 'compiler.outputFileSystem') && this.compiler.outputFileSystem.constructor.name === 'MemoryFileSystem';
+    return !! process.env.WEBPACK_DEV_SERVER;
   }
 
   /**
@@ -707,12 +740,12 @@ class WebpackAssetsManifest
    */
   getOutputPath()
   {
-    if ( ! this.compiler ) {
-      return '';
-    }
-
     if ( path.isAbsolute( this.options.output ) ) {
       return this.options.output;
+    }
+
+    if ( ! this.compiler ) {
+      return '';
     }
 
     if ( this.inDevServer() ) {

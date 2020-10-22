@@ -1,6 +1,5 @@
 const path = require('path');
 const tmpDir = require('os').tmpdir();
-const webpack = require('webpack');
 
 function getTmpDir()
 {
@@ -33,10 +32,11 @@ function hello()
 {
   return {
     mode: 'development',
-    entry: path.resolve(__dirname, './hello.js'),
+    entry: {
+      main: path.resolve(__dirname, './hello.js'),
+    },
     output: {
       path: tmpDirPath(),
-      filename: 'bundle.js',
     },
     module: {
       rules: [],
@@ -227,7 +227,7 @@ function devServer( outputPath )
 
   const config = server();
 
-  config.devServer = { outputPath: outputPath };
+  config.devServer = { outputPath };
   config.output.path = outputPath;
 
   return config;

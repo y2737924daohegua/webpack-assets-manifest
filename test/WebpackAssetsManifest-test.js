@@ -10,7 +10,6 @@ const { mkdirp: webpack_mkdirp } = require('webpack/lib/util/fs');
 const superagent = require('superagent');
 const configs = require('./fixtures/configs');
 const makeCompiler = require('./fixtures/makeCompiler');
-const WebpackDevServer = require('webpack-dev-server');
 
 const WebpackAssetsManifest = require('../src/WebpackAssetsManifest');
 const { assert, expect } = chai;
@@ -50,6 +49,7 @@ function create( config, pluginOptions, comp = makeCompiler )
 
 describe('WebpackAssetsManifest', function() {
   beforeEach(() => {
+    chai.spy.on(console, 'info', () => {});
     chai.spy.on(console, 'warn', () => {});
   });
 
@@ -273,6 +273,16 @@ describe('WebpackAssetsManifest', function() {
     });
 
     describe('inDevServer()', function() {
+      let originalEnv;
+
+      before(() => {
+        originalEnv = { ...process.env };
+      });
+
+      after(() => {
+        process.env = originalEnv;
+      });
+
       it('Identifies webpack-dev-server from process.env', function() {
         const manifest = new WebpackAssetsManifest();
 
@@ -283,32 +293,6 @@ describe('WebpackAssetsManifest', function() {
         process.env.WEBPACK_DEV_SERVER = true;
 
         assert.isTrue( manifest.inDevServer() );
-      });
-
-      it('Identifies webpack-dev-server from argv', function() {
-        delete process.env.WEBPACK_DEV_SERVER;
-
-        const manifest = new WebpackAssetsManifest();
-
-        assert.isFalse(manifest.inDevServer());
-
-        const originalArgv = process.argv.slice(0);
-
-        process.argv.push('webpack-dev-server');
-
-        assert.isTrue(manifest.inDevServer());
-
-        process.argv = originalArgv;
-      });
-
-      it('Identifies webpack-dev-server from outputFileSystem', function() {
-        const config = configs.hello();
-
-        config.output.path = '/';
-
-        const { manifest } = create( config );
-
-        assert.isTrue(manifest.inDevServer());
       });
     });
 
@@ -518,6 +502,7 @@ describe('WebpackAssetsManifest', function() {
         const { manifest, run } = create(
           configs.hello(),
           {
+            entrypoints: true,
             merge: true,
             space: 0,
           }
@@ -527,7 +512,7 @@ describe('WebpackAssetsManifest', function() {
         await run();
 
         assert.equal(
-          '{"Ginger.jpg":"images/Ginger.jpg","main.js":"bundle.js"}',
+          '{"Ginger.jpg":"images/Ginger.jpg","entrypoints":{"main":{"css":["main.css"],"js":["main.js"]},"demo":{"js":["demo.js"]}},"main.js":"main.js"}',
           manifest.toString()
         );
       });
@@ -605,7 +590,7 @@ describe('WebpackAssetsManifest', function() {
 
         await run();
 
-        assert.equal( cdn.default + 'bundle.js', manifest.get('main.js') );
+        assert.equal( cdn.default + 'main.js', manifest.get('main.js') );
       });
 
       it('has no effect if false', async () => {
@@ -622,7 +607,7 @@ describe('WebpackAssetsManifest', function() {
 
         await run();
 
-        assert.equal('bundle.js', manifest.get('main.js') );
+        assert.equal('main.js', manifest.get('main.js') );
       });
 
       it('only prefixes strings', function() {
@@ -1124,7 +1109,7 @@ describe('WebpackAssetsManifest', function() {
         const created = create(
           configs.complex(),
           {
-            output: '../assets-manifest.json',
+            output: './reports/assets-manifest.json',
             integrity: true,
             integrityHashes: [ 'md5' ],
             entrypoints: true,
@@ -1151,7 +1136,8 @@ describe('WebpackAssetsManifest', function() {
                 assets: others,
               };
             },
-          }
+          },
+          webpack
         );
 
         manifest = created.manifest;
@@ -1235,6 +1221,18 @@ describe('WebpackAssetsManifest', function() {
   });
 
   describe('Usage with webpack-dev-server', function() {
+    let originalEnv;
+    let WebpackDevServer;
+
+    before(() => {
+      originalEnv = { ...process.env };
+      WebpackDevServer = require('webpack-dev-server');
+    });
+
+    after(() => {
+      process.env = originalEnv;
+    });
+
     const getOptions = () => ({
       publicPath: '/assets/',
       quiet: true,
@@ -1262,7 +1260,7 @@ describe('WebpackAssetsManifest', function() {
 
     it('Should serve the assets manifest JSON file', done => {
       const { compiler } = create(
-        configs.devServer(),
+        configs.devServer( configs.tmpDirPath() ),
         undefined,
         webpack
       );
@@ -1291,7 +1289,7 @@ describe('WebpackAssetsManifest', function() {
       const { compiler, manifest } = create(
         config,
         {
-          output: path.join( config.output.path, 'manifest.json' ),
+          output: path.join( config.output.path, 'assets-manifest.json' ),
           writeToDisk: true,
         },
         webpack
@@ -1301,7 +1299,7 @@ describe('WebpackAssetsManifest', function() {
 
       server.listen(8888, 'localhost', function() {
         superagent
-          .get('http://localhost:8888/assets/manifest.json')
+          .get('http://localhost:8888/assets/assets-manifest.json')
           .end(function(err) {
             if ( err ) {
               throw err;
@@ -1402,7 +1400,7 @@ describe('WebpackAssetsManifest', function() {
 
       await run();
 
-      expect( manifest.get('bundle.js.gz') ).to.equal('bundle.js.gz');
+      expect( manifest.get('main.js.gz') ).to.equal('main.js.gz');
     });
   });
 });
