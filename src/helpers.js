@@ -155,6 +155,28 @@ function findMapKeysByValue( map )
 }
 
 /**
+ * Group items from an array based on a callback return value.
+ *
+ * @param {Array} arr
+ * @param {(item: any) => string} getGroup
+ * @param {(item: any) => any} mapper
+ */
+function group( arr, getGroup, mapper = item => item )
+{
+  return arr.reduce(
+    (obj, item) => {
+      const group = getGroup( item );
+
+      obj[ group ] = obj[ group ] || [];
+      obj[ group ].push( mapper( item ) );
+
+      return obj;
+    },
+    Object.create(null)
+  );
+}
+
+/**
  * Build a file path to a lock file in the tmp directory
  *
  * @param {string} filename
@@ -230,6 +252,7 @@ module.exports = {
   getSortedObject,
   templateStringToRegExp,
   findMapKeysByValue,
+  group,
   getLockFilename,
   lock,
   lockSync,

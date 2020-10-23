@@ -13,6 +13,7 @@ const {
   getSortedObject,
   templateStringToRegExp,
   findMapKeysByValue,
+  group,
 } = require('../src/helpers.js');
 
 describe('Helpers', function() {
@@ -171,6 +172,33 @@ describe('Helpers', function() {
       expect( findPetsFor('Eric') ).to.be.an('array').that.include('Ginger', 'Wilson').and.to.have.lengthOf(2);
       expect( findPetsFor('Amy') ).to.be.an('array').that.include('Oliver', 'Andy', 'Francis').and.to.have.lengthOf(3);
       expect( findPetsFor('None') ).to.be.an('array').and.to.have.lengthOf(0);
+    });
+  });
+
+  describe('group', () => {
+    it('group items from an array based on a callback return value', () => {
+      const grouped = group(
+        [ 'cat', 'dog', 'dinosaur' ],
+        word => word[ 0 ]
+      );
+
+      expect( grouped ).to.deep.equal({
+        c: [ 'cat' ],
+        d: [ 'dog', 'dinosaur' ],
+      });
+    });
+
+    it('can modify items with a callback', () => {
+      const grouped = group(
+        [ 'cat', 'dog', 'dinosaur' ],
+        word => word[ 0 ],
+        word => word.toUpperCase()
+      );
+
+      expect( grouped ).to.deep.equal({
+        c: [ 'CAT' ],
+        d: [ 'DOG', 'DINOSAUR' ],
+      });
     });
   });
 });
