@@ -485,7 +485,7 @@ class WebpackAssetsManifest
 
           this.assetNames.set(
             contextRelativeKeys ?
-              assetInfo.sourceFilename :
+              info.sourceFilename :
               path.join( path.dirname(filename), path.basename(module.userRequest) ),
             filename
           );
