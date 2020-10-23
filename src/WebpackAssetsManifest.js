@@ -24,6 +24,7 @@ const {
   isObject,
   getSortedObject,
   templateStringToRegExp,
+  group,
   findMapKeysByValue,
   lock,
   unlock,
@@ -241,7 +242,7 @@ class WebpackAssetsManifest
    * Add item to assets without modifying the key or value.
    *
    * @param {string} key
-   * @param {string} value
+   * @param {any} value
    * @return {object} this
    */
   setRaw(key, value)
@@ -255,7 +256,7 @@ class WebpackAssetsManifest
    * Add an item to the manifest.
    *
    * @param {string} key
-   * @param {string} value
+   * @param {any} value
    * @return {object} this
    */
   set(key, value)
@@ -427,35 +428,6 @@ class WebpackAssetsManifest
   }
 
   /**
-   * @param {object} entrypoints from a compilation
-   */
-  getEntrypointFilesGroupedByExtension( entrypoints )
-  {
-    const findAssetKeys = findMapKeysByValue( this.assetNames );
-    const removeHMR = f => ! this.isHMR(f);
-    const groupFilesByExtension = (files, file) => {
-      const ext = this.getExtension(file).replace(/^\.+/, '').toLowerCase();
-      const matchingAssets = findAssetKeys(file).map( key => this.assets[ key ] || key );
-
-      files[ ext ] = files[ ext ] || [];
-      files[ ext ].push( ...matchingAssets );
-
-      return files;
-    };
-
-    const grouped = Object.create(null);
-
-    for ( const [ name, entrypoint ] of entrypoints ) {
-      grouped[ name ] = entrypoint
-        .getFiles()
-        .filter( removeHMR )
-        .reduce( groupFilesByExtension, Object.create(null) );
-    }
-
-    return grouped;
-  }
-
-  /**
    * Emit the assets manifest
    *
    * @param {object} compilation
@@ -500,16 +472,23 @@ class WebpackAssetsManifest
       if ( modules ) {
         for ( const module of modules ) {
           const { assetInfo, filename } = module.buildInfo;
-          const sourceFilename = contextRelativeKeys ?
-            path.relative( compilation.compiler.context, module.userRequest ) :
-            path.join( path.dirname(filename), path.basename(module.userRequest) );
 
-          assetInfo.sourceFilename = sourceFilename;
-          assetInfo.userRequest = module.userRequest;
+          const info = Object.assign(
+            {
+              sourceFilename: path.relative( compilation.compiler.context, module.userRequest ),
+              userRequest: module.userRequest,
+            },
+            assetInfo,
+          );
 
-          compilation.assetsInfo.set(filename, assetInfo);
+          compilation.assetsInfo.set(filename, info);
 
-          this.assetNames.set(sourceFilename, filename);
+          this.assetNames.set(
+            contextRelativeKeys ?
+              assetInfo.sourceFilename :
+              path.join( path.dirname(filename), path.basename(module.userRequest) ),
+            filename
+          );
         }
       }
     }
@@ -522,9 +501,12 @@ class WebpackAssetsManifest
    */
   handleAfterProcessAssets( compilation /* , assets */ )
   {
+    // Look in DefaultStatsPresetPlugin.js for options
     const stats = compilation.getStats().toJson({
       all: false,
       assets: true,
+      chunkGroups: this.options.entrypoints,
+      chunkGroupChildren: this.options.entrypoints,
     });
 
     this.processAssetsByChunkName( stats.assetsByChunkName );
@@ -555,7 +537,31 @@ class WebpackAssetsManifest
     }
 
     if ( this.options.entrypoints ) {
-      const entrypoints = this.getEntrypointFilesGroupedByExtension( compilation.entrypoints );
+      const removeHMR = file => ! this.isHMR(file);
+      const getExtensionGroup = file => this.getExtension(file).replace(/^\.+/, '').toLowerCase();
+      const getAssetOrFilename = file => this.assets[ findAssetKeys( file ).pop() ] || this.assets[ file ] || file;
+
+      const entrypoints = Object.create(null);
+
+      for ( const [ name, entrypoint ] of compilation.entrypoints ) {
+        entrypoints[ name ] = {
+          assets: group(
+            entrypoint.getFiles().filter( removeHMR ),
+            getExtensionGroup,
+            getAssetOrFilename
+          ),
+        };
+
+        const { childAssets } = stats.namedChunkGroups[ name ];
+
+        Object.keys(childAssets).forEach( property => {
+          entrypoints[ name ][ property ] = group(
+            childAssets[ property ],
+            getExtensionGroup,
+            getAssetOrFilename
+          );
+        });
+      }
 
       if ( this.options.entrypointsKey === false ) {
         for ( const key in entrypoints ) {
@@ -656,14 +662,15 @@ class WebpackAssetsManifest
       const info = Object.assign( {}, assetInfo );
 
       if ( this.getExtension( module.userRequest ) === this.getExtension( name ) ) {
-        const sourceFilename = contextRelativeKeys ?
-          path.relative( compilation.compiler.context, module.userRequest ) :
-          path.join( path.dirname(name), path.basename(module.userRequest) );
-
-        info.sourceFilename = sourceFilename;
+        info.sourceFilename = path.relative( compilation.compiler.context, module.userRequest );
         info.userRequest = module.userRequest;
 
-        this.assetNames.set(sourceFilename, name);
+        this.assetNames.set(
+          contextRelativeKeys ?
+            info.sourceFilename :
+            path.join( path.dirname(name), path.basename(module.userRequest) ),
+          name
+        );
       }
 
       return emitFile.call(module, name, content, sourceMap, info);

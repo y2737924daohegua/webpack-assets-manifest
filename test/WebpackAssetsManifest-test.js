@@ -512,7 +512,7 @@ describe('WebpackAssetsManifest', function() {
         await run();
 
         assert.equal(
-          '{"Ginger.jpg":"images/Ginger.jpg","entrypoints":{"main":{"css":["main.css"],"js":["main.js"]},"demo":{"js":["demo.js"]}},"main.js":"main.js"}',
+          '{"Ginger.jpg":"images/Ginger.jpg","entrypoints":{"main":{"assets":{"css":["main.css"],"js":["main.js"]}},"demo":{"assets":{"js":["demo.js"]}}},"main.js":"main.js"}',
           manifest.toString()
         );
       });
@@ -1160,15 +1160,15 @@ describe('WebpackAssetsManifest', function() {
       it('entrypoints can have customized values', () => {
         const { assets, entrypoints } = manifest.toJSON();
 
-        expect( entrypoints.complex.js[ 0 ] ).to.deep.equal( assets[ 'complex.js' ] );
+        expect( entrypoints.complex.assets.js[ 0 ] ).to.deep.equal( assets[ 'complex.js' ] );
       });
 
       it('entrypoints use default values when corresponding asset is not found (excluded during customize)', () => {
         const { entrypoints } = manifest.toJSON();
 
-        expect( entrypoints.main ).to.deep.equal({
-          css: [ 'main.css' ],
-          js: [ 'main.js' ],
+        expect( entrypoints.main.assets ).to.deep.equal({
+          css: [ 'main-e31902.css' ],
+          js: [ 'main-c72f35.js' ],
         });
       });
     });

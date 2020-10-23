@@ -3,18 +3,22 @@
   "main.js": "main.js",
   "entrypoints": {
     "main": {
-      "css": [
-        "main.css"
-      ],
-      "js": [
-        "runtime.js",
-        "main.js"
-      ]
+      "assets": {
+        "css": [
+          "main.css"
+        ],
+        "js": [
+          "runtime.js",
+          "main.js"
+        ]
+      }
     },
     "demo": {
-      "js": [
-        "demo.js"
-      ]
+      "assets": {
+        "js": [
+          "demo.js"
+        ]
+      }
     }
   }
 }
