@@ -1167,8 +1167,8 @@ describe('WebpackAssetsManifest', function() {
         const { entrypoints } = manifest.toJSON();
 
         expect( entrypoints.main.assets ).to.deep.equal({
-          css: [ 'main-e31902.css' ],
-          js: [ 'main-c72f35.js' ],
+          css: [ 'main-HASH.css' ],
+          js: [ 'main-HASH.js' ],
         });
       });
     });

@@ -166,7 +166,7 @@ function complex()
     },
     output: {
       path: tmpDirPath(),
-      filename: '[name]-[contenthash:6].js',
+      filename: '[name]-HASH.js',
       publicPath: 'https://assets.example.com/',
     },
     module: {
@@ -175,14 +175,14 @@ function complex()
           test: /\.loader\.jpg$/i,
           loader: 'file-loader',
           options: {
-            name: 'images/[contenthash:6].[ext]',
+            name: 'images/HASH.[ext]',
           },
         },
         {
           test: /\.asset\.jpg$/i,
           type: 'asset/resource',
           generator: {
-            filename: 'images/[contenthash:6][ext][query]',
+            filename: 'images/HASH[ext][query]',
           },
         },
         {
@@ -196,7 +196,7 @@ function complex()
     },
     plugins: [
       new MiniCssExtractPlugin({
-        filename: '[name]-[contenthash:6].css',
+        filename: '[name]-HASH.css',
       }),
     ],
   };
