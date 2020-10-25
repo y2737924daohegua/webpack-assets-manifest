@@ -177,6 +177,7 @@ class WebpackAssetsManifest
       // Include `compilation.entrypoints` in the manifest file
       entrypoints: false,
       entrypointsKey: 'entrypoints',
+      entrypointsUseAssets: true,
 
       // https://developer.mozilla.org/en-US/docs/Web/Security/Subresource_Integrity
       integrity: false,
@@ -538,8 +539,10 @@ class WebpackAssetsManifest
 
     if ( this.options.entrypoints ) {
       const removeHMR = file => ! this.isHMR(file);
-      const getExtensionGroup = file => this.getExtension(file).replace(/^\.+/, '').toLowerCase();
-      const getAssetOrFilename = file => this.assets[ findAssetKeys( file ).pop() ] || this.assets[ file ] || file;
+      const getExtensionGroup = file => this.getExtension(file).substring(1).toLowerCase();
+      const getAssetOrFilename = this.options.entrypointsUseAssets ?
+        file => this.assets[ findAssetKeys( file ).pop() ] || this.assets[ file ] || file :
+        undefined;
 
       const entrypoints = Object.create(null);
 
@@ -552,6 +555,7 @@ class WebpackAssetsManifest
           ),
         };
 
+        // This contains preload and prefetch
         const { childAssets } = stats.namedChunkGroups[ name ];
 
         Object.keys(childAssets).forEach( property => {

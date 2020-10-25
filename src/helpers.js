@@ -159,7 +159,7 @@ function findMapKeysByValue( map )
  *
  * @param {Array} arr
  * @param {(item: any) => string} getGroup
- * @param {(item: any) => any} mapper
+ * @param {(item: any, group: string) => any} mapper
  */
 function group( arr, getGroup, mapper = item => item )
 {
@@ -167,8 +167,10 @@ function group( arr, getGroup, mapper = item => item )
     (obj, item) => {
       const group = getGroup( item );
 
-      obj[ group ] = obj[ group ] || [];
-      obj[ group ].push( mapper( item ) );
+      if ( group ) {
+        obj[ group ] = obj[ group ] || [];
+        obj[ group ].push( mapper( item, group ) );
+      }
 
       return obj;
     },

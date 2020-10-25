@@ -156,7 +156,7 @@ describe('Helpers', function() {
     });
   });
 
-  describe('findMapKeysByValue', function() {
+  describe('findMapKeysByValue()', function() {
     it('finds all keys that have the corresponding value', () => {
       const data = new Map();
 
@@ -175,7 +175,7 @@ describe('Helpers', function() {
     });
   });
 
-  describe('group', () => {
+  describe('group()', () => {
     it('group items from an array based on a callback return value', () => {
       const grouped = group(
         [ 'cat', 'dog', 'dinosaur' ],
@@ -188,16 +188,27 @@ describe('Helpers', function() {
       });
     });
 
+    it('prevent item from being grouped', () => {
+      const grouped = group(
+        [ 'cat', 'dog', 'dinosaur' ],
+        word => word === 'cat' ? false : word[ 0 ]
+      );
+
+      expect( grouped ).to.deep.equal({
+        d: [ 'dog', 'dinosaur' ],
+      });
+    });
+
     it('can modify items with a callback', () => {
       const grouped = group(
         [ 'cat', 'dog', 'dinosaur' ],
         word => word[ 0 ],
-        word => word.toUpperCase()
+        (word, group) => `${word.toUpperCase()}-group-${group}`,
       );
 
       expect( grouped ).to.deep.equal({
-        c: [ 'CAT' ],
-        d: [ 'DOG', 'DINOSAUR' ],
+        c: [ 'CAT-group-c' ],
+        d: [ 'DOG-group-d', 'DINOSAUR-group-d' ],
       });
     });
   });

@@ -824,6 +824,27 @@ describe('WebpackAssetsManifest', function() {
 
         assert.typeOf(entrypoints, 'object');
       });
+
+      it('entrypoints can use default values instead of values from this.assets', async () => {
+        const { manifest, run } = create(
+          configs.hello(),
+          {
+            entrypoints: true,
+            entrypointsUseAssets: false,
+            integrity: true,
+          }
+        );
+
+        await run();
+
+        expect( manifest.get('entrypoints') ).to.deep.equal({
+          main: {
+            assets: {
+              js: [ 'main.js' ],
+            },
+          },
+        });
+      });
     });
 
     describe('entrypointsKey', function() {
@@ -1157,7 +1178,7 @@ describe('WebpackAssetsManifest', function() {
         expect( assets[ 'images/Ginger.asset.jpg' ] ).to.deep.equal( assets[ 'images/Ginger.loader.jpg' ] );
       });
 
-      it('entrypoints can have customized values', () => {
+      it('entrypoints use values from assets (could be a customized value)', () => {
         const { assets, entrypoints } = manifest.toJSON();
 
         expect( entrypoints.complex.assets.js[ 0 ] ).to.deep.equal( assets[ 'complex.js' ] );

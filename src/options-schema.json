@@ -125,6 +125,10 @@
         }
       ]
     },
+    "entrypointsUseAssets": {
+      "type": "boolean",
+      "default": true
+    },
     "integrity": {
       "type": "boolean",
       "default": false
