@@ -9,10 +9,16 @@ This Webpack plugin will generate a JSON file that matches the original filename
 
 ## Installation
 
-:warning: Starting with version 2, this plugin works with Webpack 4+. Version 3.1 requires Webpack 4.4+.
+:warning: Starting with version 4, this plugin works with Webpack 5+.
 
 ```shell
 npm install webpack-assets-manifest --save-dev
+```
+
+If you're using Webpack 4, you'll need to install version 3.
+
+```shell
+npm install webpack-assets-manifest@3 --save-dev
 ```
 
 If you're using Webpack 3 or below, you'll need to install version 1.
@@ -21,17 +27,22 @@ If you're using Webpack 3 or below, you'll need to install version 1.
 npm install webpack-assets-manifest@1 --save-dev
 ```
 
-## New in version 3
+## New in version 4
 
-* Added [hooks](#hooks).
-* Added [examples](examples/).
+* Works in Webpack 5
 * Added options:
-  * [`integrity`](#integrity)
-  * [`integrityHashes`](#integrityhashes)
-  * [`entrypoints`](#entrypoints)
-  * [`entrypointsKey`](#entrypointskey)
-* Updated `customize` callback arguments. See [customized](examples/customized.js) example.
-* Removed `contextRelativeKeys` option.
+  * [`contextRelativeKeys`](#contextRelativeKeys)
+  * [`enabled`](#enabled)
+  * [`entrypointsUseAssets`](#entrypointsUseAssets)
+* Updated option:
+  * [`output`](#output)
+    * The default value is now `assets-manifest.json`.
+  * [`writeToDisk`](#writeToDisk)
+    * The default value is now `"auto"`.
+    * Better support for Webpack multi-compiler mode.
+* Updated `customize()` hook `asset` parameter.
+  * It is now an entry from `compilation.getAssets()` instead of the asset source object.
+  * You can now get `asset.name`, `asset.info`, and `asset.source`.
 
 ## Usage
 
@@ -75,6 +86,14 @@ module.exports = {
 
 ## Options ([read the schema](src/options-schema.json))
 
+### `enabled`
+
+Type: `boolean`
+
+Default: `true`,
+
+Determine if the plugin is enabled or not.
+
 ### `output`
 
 Type: `string`
@@ -108,6 +127,14 @@ const manifest2 = new WebpackAssetsManifest({
   assets: data,
 });
 ```
+
+### `contextRelativeKeys`
+
+Type: `boolean`
+
+Default: `false`
+
+Should the keys be relative paths to the compiler context.
 
 ### `space`
 
@@ -239,6 +266,8 @@ Default: `false`
 
 Include `compilation.entrypoints` in the manifest file.
 
+This may include `preload` and `prefetch` assets, if your project has those.
+
 ### `entrypointsKey`
 
 Type: `string`, `boolean`
@@ -246,6 +275,14 @@ Type: `string`, `boolean`
 Default: `entrypoints`
 
 If this is set to `false`, the `entrypoints` will be added to the root of the manifest.
+
+### `entrypointsUseAssets`
+
+Type: `boolean`
+
+Default: `true`
+
+This will cause the `entrypoints` values to come from the manifest assets instead of `compilation.entrypoints`. For example, if you have `customize()` set up, those values will be used instead of the string filepaths that normally get used.
 
 ### `integrity`
 
