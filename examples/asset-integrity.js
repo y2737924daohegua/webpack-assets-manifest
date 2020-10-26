@@ -5,9 +5,11 @@ const manifest = new WebpackAssetsManifest({
   integrity: true,
   publicPath: true,
   customize(entry, original, manifest, asset) {
+    const integrity = asset && asset.info[ manifest.options.integrityPropertyName ];
+
     return {
       key: entry.value,
-      value: asset && asset.integrity,
+      value: integrity,
     };
   },
 });

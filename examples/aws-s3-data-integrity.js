@@ -7,9 +7,11 @@ const manifest = new WebpackAssetsManifest({
   integrityPropertyName: 'md5',
   publicPath: 's3://some-bucket/some-folder/',
   customize(entry, original, manifest, asset) {
+    const md5 = asset && asset.info[ manifest.options.integrityPropertyName ];
+
     return {
       key: entry.value,
-      value: asset && asset.md5.substr(4),
+      value: md5 && md5.substring(4),
     };
   },
 });
