@@ -35,6 +35,7 @@ const {
 const IS_MERGING = Symbol('isMerging');
 const COMPILATION_COUNTER = Symbol('compilationCounter');
 const PLUGIN_NAME = 'WebpackAssetsManifest';
+const pluginInstances = new Set();
 
 class WebpackAssetsManifest
 {
@@ -516,7 +517,20 @@ class WebpackAssetsManifest
 
     const { contextRelativeKeys } = this.options;
 
+    const manifestPaths = new Set(
+      [ ...pluginInstances ].map(
+        manifest => path.relative(
+          compilation.compiler.outputPath,
+          manifest.getManifestPath( compilation, manifest.getOutputPath() )
+        )
+      )
+    );
+
     for ( const asset of compilation.getAssets() ) {
+      if ( manifestPaths.has( asset.name ) ) {
+        continue;
+      }
+
       const sourceFilenames = findAssetKeys( asset.name );
 
       if ( ! sourceFilenames.length ) {
@@ -614,6 +628,8 @@ class WebpackAssetsManifest
    */
   handleBeforeRun()
   {
+    pluginInstances.clear();
+
     this.assetNames.clear();
   }
 
@@ -707,6 +723,8 @@ class WebpackAssetsManifest
   handleCompilation(compilation)
   {
     ++this[ COMPILATION_COUNTER ];
+
+    pluginInstances.add(this);
 
     NormalModule.getCompilationHooks(compilation).loader.tap(
       PLUGIN_NAME,

@@ -1,24 +1,25 @@
 {
-    "version": "0.1",
-    "language": "en",
-    "words": [
-        "chunkhash",
-        "codecov",
-        "deepmerge",
-        "devtool",
-        "entrypoint",
-        "entrypoints",
-        "entrypointskey",
-        "escaperegexp",
-        "instanceof",
-        "integrityhashes",
-        "lcov",
-        "prefetch",
-        "subpage",
-        "subresource",
-        "tapable",
-        "typecheck",
-        "webdeveric"
-    ],
-    "flagWords": []
+  "version": "0.1",
+  "language": "en",
+  "words": [
+    "chunkhash",
+    "codecov",
+    "deepmerge",
+    "devtool",
+    "entrypoint",
+    "entrypoints",
+    "entrypointskey",
+    "escaperegexp",
+    "instanceof",
+    "integrityhashes",
+    "lcov",
+    "prefetch",
+    "preload",
+    "subpage",
+    "subresource",
+    "tapable",
+    "typecheck",
+    "webdeveric"
+  ],
+  "flagWords": []
 }

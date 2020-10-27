@@ -1194,6 +1194,30 @@ describe('WebpackAssetsManifest', function() {
       });
     });
 
+    describe('Handles multiple plugin instances being used', () => {
+      it('manifests does not contain other manifests', done => {
+        const config = configs.complex();
+
+        const manifest = new WebpackAssetsManifest();
+        const integrityManifest = new WebpackAssetsManifest({
+          output: 'reports/integrity-manifest.json',
+          integrity: true,
+        });
+
+        config.plugins.push( manifest, integrityManifest );
+
+        const compiler = makeCompiler( config );
+
+        compiler.run( err => {
+          expect( err ).to.be.null;
+          expect( manifest.has( integrityManifest.options.output ) ).to.be.false;
+          expect( integrityManifest.has( manifest.options.output ) ).to.be.false;
+
+          done();
+        });
+      });
+    });
+
     describe('Uses asset.info.sourceFilename when assetNames does not have a matching asset', () => {
       it('contextRelativeKeys is on', async () => {
         const { manifest, run } = create(
