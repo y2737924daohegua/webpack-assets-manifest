@@ -35,7 +35,6 @@ const {
 const IS_MERGING = Symbol('isMerging');
 const COMPILATION_COUNTER = Symbol('compilationCounter');
 const PLUGIN_NAME = 'WebpackAssetsManifest';
-const pluginInstances = new Set();
 
 class WebpackAssetsManifest
 {
@@ -464,7 +463,13 @@ class WebpackAssetsManifest
 
     this.maybeMerge();
 
-    compilation.emitAsset( output, new RawSource(this.toString(), false) );
+    compilation.emitAsset(
+      output,
+      new RawSource(this.toString(), false),
+      {
+        assetsManifest: true,
+      }
+    );
 
     if ( this.options.merge ) {
       unlockSync( output );
@@ -532,17 +537,8 @@ class WebpackAssetsManifest
 
     const { contextRelativeKeys } = this.options;
 
-    const manifestPaths = new Set(
-      [ ...pluginInstances ].map(
-        manifest => path.relative(
-          compilation.compiler.outputPath,
-          manifest.getManifestPath( compilation, manifest.getOutputPath() )
-        )
-      )
-    );
-
     for ( const asset of compilation.getAssets() ) {
-      if ( manifestPaths.has( asset.name ) ) {
+      if ( asset.info.assetsManifest ) {
         continue;
       }
 
@@ -643,8 +639,6 @@ class WebpackAssetsManifest
    */
   handleBeforeRun()
   {
-    pluginInstances.clear();
-
     this.assetNames.clear();
   }
 
@@ -692,7 +686,7 @@ class WebpackAssetsManifest
     const { emitFile } = loaderContext;
     const { contextRelativeKeys } = this.options;
 
-    // assetInfo parameter was added in Webpack 5
+    // assetInfo parameter was added in Webpack 4.40.0
     loaderContext.emitFile = (name, content, sourceMap, assetInfo) => {
       const info = Object.assign( {}, assetInfo );
 
@@ -738,8 +732,6 @@ class WebpackAssetsManifest
   handleCompilation(compilation)
   {
     ++this[ COMPILATION_COUNTER ];
-
-    pluginInstances.add(this);
 
     NormalModule.getCompilationHooks(compilation).loader.tap(
       PLUGIN_NAME,
