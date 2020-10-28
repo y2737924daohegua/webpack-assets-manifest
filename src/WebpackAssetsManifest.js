@@ -150,6 +150,21 @@ class WebpackAssetsManifest
   }
 
   /**
+   * The stats object is no longer kept around for memory usage reasons.
+   * Warn the user just in case they're using manifest.stats in the customize hook.
+   * Stats are still available in the done hook.
+   *
+   * @todo remove this in the next major version.
+   * @return {object}
+   */
+  get stats()
+  {
+    warn.once('manifest.stats has been removed. Please use the done hook instead.');
+
+    return {};
+  }
+
+  /**
    * Get the default options.
    *
    * @return {object}

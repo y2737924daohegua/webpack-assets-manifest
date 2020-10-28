@@ -728,6 +728,20 @@ describe('WebpackAssetsManifest', function() {
         assert.isFalse( manifest.has('hello') );
         assert.deepEqual( {}, manifest.assets );
       });
+
+      it('manifest.stats returns an empty object', function() {
+        const { manifest } = create(
+          configs.hello(),
+          {
+            customize(entry, original, manifest) {
+              expect( manifest.stats ).to.be.an('object');
+              expect( manifest.stats ).to.be.empty;
+            },
+          }
+        );
+
+        manifest.set('key', 'value');
+      });
     });
 
     describe('integrityHashes', function() {
