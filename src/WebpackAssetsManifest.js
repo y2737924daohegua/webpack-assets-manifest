@@ -583,13 +583,13 @@ class WebpackAssetsManifest
         // This contains preload and prefetch
         const { childAssets } = stats.namedChunkGroups[ name ];
 
-        Object.keys(childAssets).forEach( property => {
+        for ( const [ property, assets ] of Object.entries( childAssets ) ) {
           entrypoints[ name ][ property ] = group(
-            childAssets[ property ],
+            assets.filter( removeHMR ),
             getExtensionGroup,
             getAssetOrFilename
           );
-        });
+        }
       }
 
       if ( this.options.entrypointsKey === false ) {
@@ -690,17 +690,15 @@ class WebpackAssetsManifest
     loaderContext.emitFile = (name, content, sourceMap, assetInfo) => {
       const info = Object.assign( {}, assetInfo );
 
-      if ( this.getExtension( module.userRequest ) === this.getExtension( name ) ) {
-        info.sourceFilename = path.relative( compilation.compiler.context, module.userRequest );
-        info.userRequest = module.userRequest;
+      info.sourceFilename = path.relative( compilation.compiler.context, module.userRequest );
+      info.userRequest = module.userRequest;
 
-        this.assetNames.set(
-          contextRelativeKeys ?
-            info.sourceFilename :
-            path.join( path.dirname(name), path.basename(module.userRequest) ),
-          name
-        );
-      }
+      this.assetNames.set(
+        contextRelativeKeys ?
+          info.sourceFilename :
+          path.join( path.dirname(name), path.basename(module.userRequest) ),
+        name
+      );
 
       return emitFile.call(module, name, content, sourceMap, info);
     };
